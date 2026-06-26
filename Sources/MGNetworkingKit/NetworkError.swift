@@ -11,9 +11,7 @@ public enum NetworkError: Error, LocalizedError, Sendable {
     case serverError(statusCode: Int, data: Data?)
     case unknown
     
-    @available(macOS 13, *)
-    @available(iOS 16, *)
-    public var errorDescription: LocalizedStringResource? {
+    public var errorDescription: String? {
         switch self {
             case .invalidURL:
                 return "The URL is invalid"
@@ -25,10 +23,22 @@ public enum NetworkError: Error, LocalizedError, Sendable {
                 return "Failed to encode request body: \(error.localizedDescription)"
             case .requestFailed(let error):
                 return "Request failed: \(error.localizedDescription)"
-            case .serverError(let statusCode, _):
+            case .serverError(let statusCode, let data):
+                if let data, let message = Self.extractMessage(from: data) {
+                    return message
+                }
                 return "Server returned error, status code: \(statusCode)"
             case .unknown:
                 return "An unknown error occurred"
         }
+    }
+    
+        // Tries to extract a human-readable message from a JSON error body,
+        // e.g. {"message": "..."} or {"error": "..."}
+    private static func extractMessage(from data: Data) -> String? {
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return nil
+        }
+        return (json["message"] as? String) ?? (json["error"] as? String)
     }
 }
