@@ -23,6 +23,17 @@ public final class MGNetworkService: MGNetworkServiceProtocol, @unchecked Sendab
     public static func defaultDecoder() -> JSONDecoder {
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
+        
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        decoder.dateDecodingStrategy = .custom { decoder in
+            let container = try decoder.singleValueContainer()
+            let str = try container.decode(String.self)
+            if let date = formatter.date(from: str) { return date }
+            throw DecodingError.dataCorruptedError(in: container,
+                                                   debugDescription: "Invalid date format: \(str)")
+        }
+        
         return decoder
     }
     
