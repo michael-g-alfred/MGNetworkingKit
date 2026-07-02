@@ -22,7 +22,7 @@ public final class MGNetworkService: MGNetworkServiceProtocol, @unchecked Sendab
     
     public static func defaultDecoder() -> JSONDecoder {
         let decoder = JSONDecoder()
-        decoder.keyDecodingStrategy = .convertFromSnakeCase
+//        decoder.keyDecodingStrategy = .convertFromSnakeCase
         
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
@@ -30,8 +30,7 @@ public final class MGNetworkService: MGNetworkServiceProtocol, @unchecked Sendab
             let container = try decoder.singleValueContainer()
             let str = try container.decode(String.self)
             if let date = formatter.date(from: str) { return date }
-            throw DecodingError.dataCorruptedError(in: container,
-                                                   debugDescription: "Invalid date format: \(str)")
+            throw DecodingError.dataCorruptedError(in: container, debugDescription: "Invalid date format: \(str)")
         }
         
         return decoder
@@ -39,7 +38,7 @@ public final class MGNetworkService: MGNetworkServiceProtocol, @unchecked Sendab
     
     public static func defaultEncoder() -> JSONEncoder {
         let encoder = JSONEncoder()
-        encoder.keyEncodingStrategy = .convertToSnakeCase
+//        encoder.keyEncodingStrategy = .convertToSnakeCase
         return encoder
     }
     
