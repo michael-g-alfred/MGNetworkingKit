@@ -11,7 +11,7 @@ public final class MGNetworkService: MGNetworkServiceProtocol, Sendable {
     public init(
         session: URLSession = .shared,
         decoder: JSONDecoder = MGNetworkService.defaultDecoder(),
-        encoder: JSONEncoder = JSONEncoder()
+        encoder: JSONEncoder = MGNetworkService.defaultEncoder()
     ) {
         self.session = session
         self.decoder = decoder
@@ -22,6 +22,12 @@ public final class MGNetworkService: MGNetworkServiceProtocol, Sendable {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         return decoder
+    }
+    
+    public static func defaultEncoder() -> JSONEncoder {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        return encoder
     }
     
     public func request<T: Decodable>(_ config: MGRequestConfig) async throws -> T {
