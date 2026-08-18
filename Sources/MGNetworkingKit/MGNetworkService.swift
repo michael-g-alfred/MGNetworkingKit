@@ -1,12 +1,20 @@
 import Foundation
 
+    // MARK: - Network Service
+
 public final class MGNetworkService: MGNetworkServiceProtocol, Sendable {
     
+        // MARK: Shared
+    
     public static let shared = MGNetworkService()
+    
+        // MARK: Properties
     
     private let session: URLSession
     private let decoder: JSONDecoder
     private let encoder: JSONEncoder
+    
+        // MARK: Initialization
     
     public init(
         session: URLSession = .shared,
@@ -18,11 +26,15 @@ public final class MGNetworkService: MGNetworkServiceProtocol, Sendable {
         self.encoder = encoder
     }
     
+        // MARK: Decoder
+    
     public static func defaultDecoder() -> JSONDecoder {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         return decoder
     }
+    
+        // MARK: Encoder
     
     public static func defaultEncoder() -> JSONEncoder {
         let encoder = JSONEncoder()
@@ -30,104 +42,185 @@ public final class MGNetworkService: MGNetworkServiceProtocol, Sendable {
         return encoder
     }
     
-    public func request<T: Decodable>(_ config: MGRequestConfig) async throws -> T {
-        let urlRequest = try buildURLRequest(config)
+        // MARK: Request
+    
+    public func request<T: Decodable>(
+        _ config: MGRequestConfig
+    ) async throws -> T {
+        
+        let request = try buildURLRequest(config)
+        
+        let (data, response) = try await session.data(
+            for: request
+        )
+        
+        try validate(
+            response: response,
+            data: data
+        )
+        
+        guard !data.isEmpty else {
+            throw NetworkError.noData
+        }
         
         do {
-            let (data, response) = try await session.data(for: urlRequest)
-            
-            guard let httpResponse = response as? HTTPURLResponse else {
-                throw NetworkError.unknown
-            }
-            _ = httpResponse
-            
-            try validate(response: response, data: data)
-            
-            guard !data.isEmpty else {
-                throw NetworkError.noData
-            }
-            
-            do {
-                let decoded = try decoder.decode(T.self, from: data)
-                return decoded
-            } catch let error as DecodingError {
-                throw NetworkError.decodingFailed(error)
-            } catch {
-                throw NetworkError.decodingFailed(error)
-            }
+            return try decoder.decode(
+                T.self,
+                from: data
+            )
+        } catch let error as DecodingError {
+            throw NetworkError.decodingFailed(error)
         } catch {
-            throw error
+            throw NetworkError.decodingFailed(error)
         }
     }
     
-    public func requestWithoutResponse(_ config: MGRequestConfig) async throws {
-        let urlRequest = try buildURLRequest(config)
+        // MARK: Request Without Response
+    
+    public func requestWithoutResponse(
+        _ config: MGRequestConfig
+    ) async throws {
         
-        let (data, response) = try await session.data(for: urlRequest)
+        let request = try buildURLRequest(config)
         
-        try validate(response: response, data: data)
+        let (data, response) = try await session.data(
+            for: request
+        )
+        
+        try validate(
+            response: response,
+            data: data
+        )
     }
     
-    private func buildURLRequest(_ config: MGRequestConfig) throws -> URLRequest {
-        guard var components = URLComponents(string: config.baseURL + config.path) else {
+        // MARK: Build URLRequest
+    
+    private func buildURLRequest(
+        _ config: MGRequestConfig
+    ) throws -> URLRequest {
+        
+        guard var components = URLComponents(
+            string: config.baseURL + config.path
+        ) else {
             throw NetworkError.invalidURL
         }
         
-        if let queryItems = config.queryItems, !queryItems.isEmpty {
+            // MARK: Query
+        
+        if let queryItems = config.queryItems,
+           !queryItems.isEmpty {
+            
             components.queryItems = queryItems
+            
             queryItems.forEach {
-                DebugLogger.network("\($0.name)=\($0.value ?? "")")
+                DebugLogger.network(
+                    "\($0.name)=\($0.value ?? "")"
+                )
             }
         }
+        
+            // MARK: URL
         
         guard let url = components.url else {
             throw NetworkError.invalidURL
         }
         
         var request = URLRequest(url: url)
+        
         request.httpMethod = config.method.rawValue
         
-            // Only default to JSON content-type when this isn't a raw-body
-            // request (e.g. multipart/form-data uploads set their own
-            // Content-Type with boundary via config.headers below).
-        if config.rawBody == nil {
-            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        }
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
+            // MARK: Default Headers
+        
+        request.setValue(
+            "application/json",
+            forHTTPHeaderField: "Accept"
+        )
+        
+            // MARK: Custom Headers
         
         config.headers?.forEach { key, value in
-            request.setValue(value, forHTTPHeaderField: key)
+            request.setValue(
+                value,
+                forHTTPHeaderField: key
+            )
         }
         
-            // Raw body (e.g. multipart/form-data) takes priority and is sent
-            // verbatim — never passed through JSONEncoder, since Data itself
-            // conforms to Encodable and would otherwise be base64-wrapped
-            // inside a JSON string, corrupting the multipart boundary bytes.
-        if let rawBody = config.rawBody {
-            request.httpBody = rawBody
-        } else if let body = config.body {
-            do {
-                let encodedBody = try encode(body)
-                request.httpBody = encodedBody
-            } catch {
-                throw NetworkError.encodingFailed(error)
-            }
-        }
+            // MARK: Body
+        
+        try configureBody(
+            config.body,
+            for: &request
+        )
         
         return request
     }
     
-    private func encode<E: Encodable>(_ value: E) throws -> Data {
-        return try encoder.encode(value)
+        // MARK: Configure Body
+    
+    private func configureBody(
+        _ body: MGRequestBody,
+        for request: inout URLRequest
+    ) throws {
+        
+        switch body {
+                
+            case .none:
+                break
+                
+                    // MARK: JSON
+                
+            case .json(let encodable):
+                
+                request.setValue(
+                    "application/json",
+                    forHTTPHeaderField: "Content-Type"
+                )
+                
+                do {
+                    request.httpBody = try encoder.encode(
+                        encodable
+                    )
+                } catch {
+                    throw NetworkError.encodingFailed(error)
+                }
+                
+                    // MARK: Raw
+                
+            case .raw(let data):
+                
+                request.httpBody = data
+                
+                    // MARK: Multipart
+                
+            case .multipart(let multipart):
+                
+                request.setValue(
+                    multipart.contentType,
+                    forHTTPHeaderField: "Content-Type"
+                )
+                
+                request.httpBody = multipart.finalizedData()
+        }
     }
     
-    private func validate(response: URLResponse, data: Data?) throws {
+        // MARK: Validate
+    
+    private func validate(
+        response: URLResponse,
+        data: Data?
+    ) throws {
+        
         guard let httpResponse = response as? HTTPURLResponse else {
             throw NetworkError.unknown
         }
         
-        guard (200...299).contains(httpResponse.statusCode) else {
-            throw NetworkError.serverError(statusCode: httpResponse.statusCode, data: data)
+        guard (200...299).contains(
+            httpResponse.statusCode
+        ) else {
+            throw NetworkError.serverError(
+                statusCode: httpResponse.statusCode,
+                data: data
+            )
         }
     }
 }
